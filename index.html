@@ -41,8 +41,41 @@ h1{font-size:21px;margin:0}.sub{font-size:12px;color:var(--muted);margin-top:3px
 .empty{text-align:center;color:var(--muted);padding:25px 5px;font-size:13px}
 @media(max-width:780px){.grid{grid-template-columns:1fr}.hero h2{font-size:22px}.card{box-shadow:0 7px 22px #00000009}.top{padding-top:18px}}
 @media(min-width:781px){.bottom{bottom:20px}.app{padding-bottom:110px}}
-body.dark{--bg:#0e1014;--card:#171a20;--text:#f4f5f7;--muted:#9298a5;--line:#292d36;--shadow:0 12px 35px #0005}
-body.dark .tabs,body.dark .day,body.dark .quick button{background:#20242c}body.dark .tabs button.active{background:#30343d}
+body.dark{
+  --bg:#0e1014;--card:#171a20;--text:#f4f5f7;--muted:#9298a5;--line:#292d36;
+  --shadow:0 12px 35px #0005
+}
+body.dark .tabs,body.dark .day,body.dark .quick button{background:#20242c}
+body.dark .tabs button.active{background:#30343d}
+body.dark input,body.dark textarea,body.dark select{
+  color:#f4f5f7;
+  background:#0d0f13;
+  border-color:#303540;
+  color-scheme:dark;
+}
+body.dark input::placeholder,body.dark textarea::placeholder{color:#747b88}
+body.dark select option{background:#171a20;color:#f4f5f7}
+body.dark input[type="date"],body.dark input[type="time"]{color:#f4f5f7}
+.hero h2{color:#17191f}
+.hero p{color:#4d5563}
+body.dark .hero h2{color:#17191f}
+body.dark .hero p{color:#4d5563}
+.bottom{
+  padding-bottom:calc(8px + env(safe-area-inset-bottom));
+  bottom:0;
+  border-radius:25px 25px 0 0;
+}
+.app{padding-bottom:calc(118px + env(safe-area-inset-bottom))}
+.calendar-wrap{position:relative}
+.cal-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.cal-switch{display:flex;background:#eef0f4;border-radius:12px;padding:3px}
+.cal-switch button{padding:7px 12px;border-radius:9px;background:transparent;color:var(--muted);font-size:12px}
+.cal-switch button.active{background:var(--blue);color:#fff;box-shadow:0 2px 7px #0002}
+body.dark .cal-switch{background:#20242c}
+.cal-nav{display:flex;align-items:center;justify-content:center;gap:8px;flex:1}
+.cal-nav button{width:34px;height:34px;border-radius:10px;background:#f3f4f7;color:var(--text)}
+body.dark .cal-nav button{background:#20242c}
+.cal-month{font-weight:700;font-size:14px;min-width:125px;text-align:center}
 </style>
 </head>
 <body>
@@ -69,7 +102,20 @@ body.dark .tabs,body.dark .day,body.dark .quick button{background:#20242c}body.d
 
     <aside class="card">
       <div class="card-title"><h3>تقویم</h3><span class="muted" id="month"></span></div>
-      <div class="calendar" id="calendar"></div>
+      <div class="calendar-wrap">
+        <div class="cal-toolbar">
+          <div class="cal-switch" aria-label="نوع تقویم">
+            <button id="jalaliBtn" class="active" onclick="setCalendarMode('jalali')">شمسی</button>
+            <button id="gregBtn" onclick="setCalendarMode('gregorian')">میلادی</button>
+          </div>
+          <div class="cal-nav">
+            <button onclick="changeCalendarMonth(-1)" aria-label="ماه قبل">‹</button>
+            <div class="cal-month" id="calMonth"></div>
+            <button onclick="changeCalendarMonth(1)" aria-label="ماه بعد">›</button>
+          </div>
+        </div>
+        <div class="calendar" id="calendar"></div>
+      </div>
       <div style="height:15px"></div>
       <div class="card-title"><h3>پیشرفت امروز</h3><span class="muted" id="percent">0%</span></div>
       <div class="progress"><i id="bar"></i></div>
@@ -146,15 +192,152 @@ function render(){
  document.getElementById('progressText').textContent=total?`${done} از ${total} کار انجام شده`:'هنوز کاری ثبت نشده';
  document.getElementById('heroText').textContent=total?`امروز ${total} کار داری؛ ${done} موردش انجام شده.`:'روز خلوتی داری؛ اولین کارت را اضافه کن.';
 }
-function renderCalendar(){
- const d=new Date(), y=d.getFullYear(), m=d.getMonth(), first=new Date(y,m,1).getDay(), days=new Date(y,m+1,0).getDate();
- document.getElementById('month').textContent=new Intl.DateTimeFormat('fa-IR',{month:'long'}).format(d);
- const names=['ش','ی','د','س','چ','پ','ج']; // نمایش شنبه تا جمعه
- let out=names.map(x=>`<div class="dow">${x}</div>`).join('');
- let start=(first+1)%7; for(let i=0;i<start;i++)out+='<div></div>';
- for(let n=1;n<=days;n++){let ds=`${y}-${String(m+1).padStart(2,'0')}-${String(n).padStart(2,'0')}`;let has=tasks.some(t=>t.date===ds);let is=ds===today();out+=`<div class="day ${is?'today':''} ${has?'has':''}" onclick="document.getElementById('taskDate').value='${ds}';openAdd()">${n}</div>`}
- document.getElementById('calendar').innerHTML=out;
+// ---------- Calendar ----------
+let calendarMode = localStorage.getItem('saman_calendar_mode') || 'jalali';
+let calendarCursor = new Date();
+calendarCursor.setHours(12,0,0,0);
+
+function div(a,b){ return Math.floor(a/b); }
+
+function gregorianToJalali(gy,gm,gd){
+  const gdm=[0,31,59,90,120,151,181,212,243,273,304,334];
+  let gy2=gm>2?gy+1:gy;
+  let days=355666+365*gy+div(gy2+3,4)-div(gy2+99,100)+div(gy2+399,400)+gd+gdm[gm-1];
+  let jy=-1595+33*div(days,12053);
+  days%=12053;
+  jy+=4*div(days,1461);
+  days%=1461;
+  if(days>365){
+    jy+=div(days-1,365);
+    days=(days-1)%365;
+  }
+  let jm=days<186?1+div(days,31):7+div(days-186,30);
+  let jd=1+(days<186?days%31:(days-186)%30);
+  return [jy,jm,jd];
 }
+
+function jalaliToGregorian(jy,jm,jd){
+  jy+=1595;
+  let days=-355668+365*jy+div(jy,33)*8+div((jy%33)+3,4)+jd+(jm<7?(jm-1)*31:(jm-7)*30+186);
+  let gy=400*div(days,146097);
+  days%=146097;
+  if(days>36524){
+    gy+=100*div(--days,36524);
+    days%=36524;
+    if(days>=365) days++;
+  }
+  gy+=4*div(days,1461);
+  days%=1461;
+  if(days>365){
+    gy+=div(days-1,365);
+    days=(days-1)%365;
+  }
+  let gd=days+1;
+  const sal_a=[0,31,0,31,30,31,30,31,31,30,31,30,31];
+  const leap=(gy%4===0 && gy%100!==0)||gy%400===0;
+  sal_a[2]=leap?29:28;
+  let gm=1;
+  while(gd>sal_a[gm]){gd-=sal_a[gm];gm++;}
+  return [gy,gm,gd];
+}
+
+function isoFromParts(y,m,d){
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function partsFromISO(iso){
+  const [y,m,d]=iso.split('-').map(Number); return [y,m,d];
+}
+function weekdayForISO(iso){
+  const [y,m,d]=partsFromISO(iso);
+  return new Date(y,m-1,d,12).getDay(); // Sun=0
+}
+function faJalaliMonth(jm){
+  return ['','فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'][jm];
+}
+function faGregorianMonth(gm){
+  return ['','ژانویه','فوریه','مارس','آوریل','مه','ژوئن','ژوئیه','اوت','سپتامبر','اکتبر','نوامبر','دسامبر'][gm];
+}
+function faNum(n){return String(n).replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[d]);}
+
+function setCalendarMode(mode){
+  calendarMode=mode;
+  localStorage.setItem('saman_calendar_mode',mode);
+  document.getElementById('jalaliBtn').classList.toggle('active',mode==='jalali');
+  document.getElementById('gregBtn').classList.toggle('active',mode==='gregorian');
+  renderCalendar();
+}
+
+function changeCalendarMonth(delta){
+  if(calendarMode==='gregorian'){
+    calendarCursor.setMonth(calendarCursor.getMonth()+delta,1);
+  }else{
+    let [jy,jm,jd]=gregorianToJalali(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,calendarCursor.getDate());
+    jm+=delta;
+    if(jm<1){jm=12;jy--;}
+    if(jm>12){jm=1;jy++;}
+    const g=jalaliToGregorian(jy,jm,1);
+    calendarCursor=new Date(g[0],g[1]-1,g[2],12);
+  }
+  renderCalendar();
+}
+
+function renderCalendar(){
+  const d=calendarCursor;
+  let displayYear,displayMonth;
+  if(calendarMode==='jalali'){
+    [displayYear,displayMonth]=gregorianToJalali(d.getFullYear(),d.getMonth()+1,d.getDate());
+    document.getElementById('calMonth').textContent=`${faJalaliMonth(displayMonth)} ${faNum(displayYear)}`;
+    document.getElementById('month').textContent='شمسی';
+  }else{
+    displayYear=d.getFullYear(); displayMonth=d.getMonth()+1;
+    document.getElementById('calMonth').textContent=`${faGregorianMonth(displayMonth)} ${displayYear}`;
+    document.getElementById('month').textContent='میلادی';
+  }
+
+  const names=calendarMode==='jalali'
+    ? ['ش','ی','د','س','چ','پ','ج']
+    : ['ی','د','س','چ','پ','ج','ش'];
+
+  let out=names.map(x=>`<div class="dow">${x}</div>`).join('');
+  let firstISO,days;
+
+  if(calendarMode==='jalali'){
+    const firstG=jalaliToGregorian(displayYear,displayMonth,1);
+    const next=(displayMonth===12)?jalaliToGregorian(displayYear+1,1,1):jalaliToGregorian(displayYear,displayMonth+1,1);
+    const firstDate=new Date(firstG[0],firstG[1]-1,firstG[2],12);
+    const nextDate=new Date(next[0],next[1]-1,next[2],12);
+    days=Math.round((nextDate-firstDate)/86400000);
+    firstISO=isoFromParts(firstG[0],firstG[1],firstG[2]);
+    // Convert Sunday=0 to Saturday-first index.
+    const start=(weekdayForISO(firstISO)+1)%7;
+    for(let i=0;i<start;i++)out+='<div></div>';
+    for(let n=1;n<=days;n++){
+      const g=jalaliToGregorian(displayYear,displayMonth,n);
+      const iso=isoFromParts(g[0],g[1],g[2]);
+      const has=tasks.some(t=>t.date===iso);
+      const is=iso===today();
+      out+=`<div class="day ${is?'today':''} ${has?'has':''}" onclick="selectCalendarDate('${iso}')">${faNum(n)}</div>`;
+    }
+  }else{
+    const firstISO=isoFromParts(displayYear,displayMonth,1);
+    days=new Date(displayYear,displayMonth,0).getDate();
+    const start=(weekdayForISO(firstISO)+6)%7; // Monday-first
+    for(let i=0;i<start;i++)out+='<div></div>';
+    for(let n=1;n<=days;n++){
+      const iso=isoFromParts(displayYear,displayMonth,n);
+      const has=tasks.some(t=>t.date===iso);
+      const is=iso===today();
+      out+=`<div class="day ${is?'today':''} ${has?'has':''}" onclick="selectCalendarDate('${iso}')">${n}</div>`;
+    }
+  }
+  document.getElementById('calendar').innerHTML=out;
+}
+
+function selectCalendarDate(iso){
+  document.getElementById('taskDate').value=iso;
+  openAdd();
+}
+
 function setFilter(f,el){filter=f;document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));el.classList.add('active');render()}
 function toggleTask(id){let t=tasks.find(x=>x.id===id);if(t)t.done=!t.done;save();render();renderCalendar()}
 function deleteTask(id){tasks=tasks.filter(x=>x.id!==id);save();render();renderCalendar()}
@@ -171,7 +354,7 @@ function voiceTask(){
 function scrollToTop(){window.scrollTo({top:0,behavior:'smooth'})}
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 if(localStorage.getItem('saman_dark')==='true')document.body.classList.add('dark');
-render();renderCalendar();
+calendarCursor = new Date(); calendarCursor.setHours(12,0,0,0); render(); renderCalendar();
 </script>
 </body>
 </html>
